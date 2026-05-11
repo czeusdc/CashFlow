@@ -26,7 +26,23 @@ dist-ssr
 # Local dev scripts & secrets
 .env - Shortcut.lnk
 *.env*
-Claude.md
 Free Cloud Code Run.ps1
 Free Cloud Code Server.bat
+
+# AI / Assistant / Agent files
+.antigravity/
+.gemini/
+.cline/
+.cursor/
+.windsurf/
+.codeium/
+.cody/
+brain/
+implementation_plan.md
+task.md
+walkthrough.md
+research_notes.md
+experiment_results.md
+analysis_results.md
+Claude.md
 Chat.txt

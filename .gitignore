@@ -37,6 +37,7 @@ Free Cloud Code Server.bat
 .windsurf/
 .codeium/
 .cody/
+.claude/
 brain/
 implementation_plan.md
 task.md
@@ -44,5 +45,6 @@ walkthrough.md
 research_notes.md
 experiment_results.md
 analysis_results.md
+CLAUDE.md
 Claude.md
 Chat.txt

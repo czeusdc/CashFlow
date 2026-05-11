@@ -26,7 +26,7 @@ dist-ssr
 # Local dev scripts & secrets
 .env - Shortcut.lnk
 *.env*
-.claude
+Claude.md
 Free Cloud Code Run.ps1
 Free Cloud Code Server.bat
 Chat.txt

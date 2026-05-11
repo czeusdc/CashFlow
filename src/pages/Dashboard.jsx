@@ -13,12 +13,6 @@
  *   7. Estimated Savings Interest (hidden if cf-hide-interest is set)
  *   8. Recent Transactions list
  *
- * Key internal helpers:
- *   computeStreak(transactions) — counts the current under-average spend streak
- *   computeInterest(...)        — calculates compound interest projection
- *   filterByPeriod(...)         — slices transactions to the selected period
- *   computeTotals(txs)          — sums income/expenses/savings for any slice
- *
  * Props:
  *   transactions  - full transaction array
  *   categories    - category array (for top-3 spending and interest projections)
@@ -32,7 +26,7 @@
 
 import { useState, useMemo } from 'react';
 import dayjs from 'dayjs';
-import { Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import SummaryCard from '../components/SummaryCard';
 import MonthlyChart from '../components/MonthlyChart';
 import TransactionItem from '../components/TransactionItem';
@@ -41,6 +35,9 @@ import RecurringReminder from '../components/RecurringReminder';
 import { useToast } from '../components/Toast';
 import { useApp } from '../contexts/AppContext';
 import { STORAGE_KEYS } from '../lib/constants';
+import { computeStreak, computeInterest, filterByPeriod, computeTotals, getGreeting } from '../lib/dashboardUtils';
+import NetWorthCard from '../components/Dashboard/NetWorthCard';
+import TopSpending from '../components/Dashboard/TopSpending';
 
 const RANGES = ['6M', 'Yearly', 'All Time'];
 
@@ -50,103 +47,6 @@ const PERIODS = [
   { id: 'allTime',     label: 'All Time' },
 ];
 
-function computeStreak(transactions) {
-  const expenses = transactions.filter(t => t.type === 'expense');
-  if (!expenses.length) return 0;
-
-  // 1. Build a map of YYYY-MM-DD -> total spend for that day.
-  const byDay = {};
-  let earliest = expenses[0].date;
-  expenses.forEach(t => {
-    byDay[t.date] = (byDay[t.date] || 0) + t.amount;
-    if (t.date < earliest) earliest = t.date;
-  });
-
-  // 2. Compute the average daily spend (among days with spending).
-  const spendDays = Object.values(byDay);
-  const avgExpense = spendDays.reduce((sum, val) => sum + val, 0) / spendDays.length;
-
-  // 3. Count backward from today.
-  let streak = 0;
-  let current = dayjs();
-  const earliestDay = dayjs(earliest);
-
-  while (current.isAfter(earliestDay) || current.isSame(earliestDay, 'day')) {
-    const key = current.format('YYYY-MM-DD');
-    const spent = byDay[key] || 0;
-
-    // A "streak day" is either:
-    if (spent > 0 && spent <= avgExpense) {
-      streak++;
-    } else if (spent === 0) {
-      // dayjs is mutable by default — wrap in dayjs() to create a fresh clone
-      // before calling subtract, so the outer 'current' is never shifted.
-      let foundNear = false;
-      for (let i = 1; i <= 7; i++) {
-        if (byDay[dayjs(current).subtract(i, 'day').format('YYYY-MM-DD')]) {
-          foundNear = true;
-          break;
-        }
-      }
-      if (foundNear) streak++;
-      else break;
-    } else {
-      break; // Exceeded average — streak ends.
-    }
-
-    current = current.subtract(1, 'day');
-    if (streak > 365) break; // sanity limit
-  }
-
-  return streak;
-}
-
-/**
- * computeInterest(principal, apr, isDailyInterest, firstDate)
- *
- * Estimates compound interest earned since the account's first transaction.
- *
- * NOTE: This is a simplified projection that assumes the current principal
- * was the starting balance. It does not account for intermediate deposits
- * or withdrawals (which would require a complex daily-balance ledger).
- * It serves as a "best-case" estimate for the user.
- */
-function computeInterest(principal, apr, isDailyInterest, firstDate) {
-  if (!apr || !principal || !firstDate) return 0;
-  const r = apr / 100;
-  const days = dayjs().diff(dayjs(firstDate), 'day');
-  if (days <= 0) return 0;
-  if (isDailyInterest) return principal * (Math.pow(1 + r / 365, days) - 1);
-  const months = dayjs().diff(dayjs(firstDate), 'month');
-  return principal * (Math.pow(1 + r / 12, months) - 1);
-}
-
-function filterByPeriod(transactions, period) {
-  if (period === 'allTime') return transactions;
-  if (period === 'thisQuarter') {
-    const currentMonth = dayjs().month();
-    const quarterStartMonth = Math.floor(currentMonth / 3) * 3;
-    const quarterStart = dayjs().month(quarterStartMonth).startOf('month');
-    return transactions.filter(t => dayjs(t.date).isAfter(quarterStart.subtract(1, 'day')));
-  }
-  // YTD
-  const yearStart = dayjs().startOf('year');
-  return transactions.filter(t => dayjs(t.date).isAfter(yearStart.subtract(1, 'day')));
-}
-
-function computeTotals(txs) {
-  const result = txs.reduce(
-    (acc, tx) => {
-      if (tx.type === 'income')   acc.income   += tx.amount;
-      else if (tx.type === 'expense') acc.expenses += tx.amount;
-      else if (tx.type === 'savings') acc.savings  += tx.amount;
-      return acc;
-    },
-    { income: 0, expenses: 0, savings: 0 }
-  );
-  result.onHand = result.income - result.expenses - result.savings;
-  return result;
-}
 
 export default function Dashboard({ transactions, categories, totals, onAdd, onUpdate, themeStyle, themeColor }) {
   const [showForm, setShowForm] = useState(false);
@@ -276,14 +176,7 @@ export default function Dashboard({ transactions, categories, totals, onAdd, onU
 
       {/* Net Worth */}
       {!hideNetWorth && (
-        <div className="networth-card" style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 4 }}>Net Worth</div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.03em' }}>{fmt(netNow)}</div>
-          <div className={`networth-trend ${netTrend >= 0 ? 'up' : 'down'}`}>
-            {netTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {netTrend >= 0 ? '+' : ''}{fmt(netTrend)} change this month
-          </div>
-        </div>
+        <NetWorthCard netNow={netNow} netTrend={netTrend} fmt={fmt} />
       )}
 
       {/* Chart + Insights — stretch both columns to match heights */}
@@ -311,31 +204,7 @@ export default function Dashboard({ transactions, categories, totals, onAdd, onU
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
             {/* Top 3 spending */}
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-                🏆 Top Spending
-              </div>
-              {top3.length === 0 ? (
-                <p style={{ fontSize: 13 }}>No expenses this month</p>
-              ) : (
-                <div className="top-spending-list">
-                  {top3.map(({ cat, amount, pct }, i) => (
-                    <div key={i} className="top-spending-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div className={`top-spending-rank rank-${i + 1}`}>{i + 1}</div>
-                        <span style={{ fontSize: '1rem' }}>{cat?.emoji}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{cat?.name ?? 'Unknown'}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--expense)' }}>{fmt(amount)}</span>
-                        <span className="top-spending-pct">{pct}%</span>
-                      </div>
-                      <div className="top-spending-bar">
-                        <div className="top-spending-bar-fill" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TopSpending top3={top3} fmt={fmt} />
 
             <InsightRow icon="💰" label="Income"   value={fmt(thisMonth.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0))}  color="var(--income)" />
             <InsightRow icon="💸" label="Expenses"  value={fmt(thisMonth.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0))} color="var(--expense)" />
@@ -395,10 +264,6 @@ export default function Dashboard({ transactions, categories, totals, onAdd, onU
   );
 }
 
-function getGreeting() {
-  const h = new Date().getHours();
-  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
-}
 
 function InsightRow({ icon, label, value, color }) {
   return (

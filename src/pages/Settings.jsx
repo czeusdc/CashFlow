@@ -23,13 +23,19 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { exportData, importData, clearAllData } from '../db/idb';
 import { useToast } from '../components/Toast';
-import { Download, Upload, Trash2, Sun, Moon, X, FileSpreadsheet } from 'lucide-react';
+import { Upload, X, Trash2 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { AVATARS } from '../hooks/useProfile';
 import { CURRENCIES } from '../hooks/useCurrency';
 import { STORAGE_KEYS } from '../lib/constants';
 import QRExport from '../components/QRExport';
 import * as XLSX from 'xlsx';
+import { downloadFile, today, formatCSV, mapExcelData } from '../lib/exportUtils';
+import ProfileSection from '../components/Settings/ProfileSection';
+import AppearanceSection from '../components/Settings/AppearanceSection';
+import DataExportSection from '../components/Settings/DataExportSection';
+import DataImportSection from '../components/Settings/DataImportSection';
+import AboutSection from '../components/Settings/AboutSection';
 
 const THEMES = [
   { id: 'teal', label: 'Teal', bg: '#14B8A6', emoji: '🌊' },
@@ -58,54 +64,8 @@ export default function Settings({ onRefresh, theme, setTheme, mode, toggleMode,
   const [editName, setEditName] = useState(profile.name || '');
   const [editAvatar, setEditAvatar] = useState(profile.avatar || '👤');
 
-  // ── Download helper ─────────────────────────────────────────────────────────
-  // Tries the File System Access API (native Save As dialog) first,
-  // then falls back to a data-URI anchor for unsupported browsers.
-  async function downloadFile(blob, filename) {
-    // Method 1: Native Save As dialog (Chrome 86+, Edge 86+)
-    if (window.showSaveFilePicker) {
-      try {
-        const ext = filename.split('.').pop();
-        const mimeMap = {
-          json: { description: 'JSON Files', accept: { 'application/json': ['.json'] } },
-          csv: { description: 'CSV Files', accept: { 'text/csv': ['.csv'] } },
-          xlsx: { description: 'Excel Files', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } },
-        };
-        const handle = await window.showSaveFilePicker({
-          suggestedName: filename,
-          types: mimeMap[ext] ? [mimeMap[ext]] : [],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return true;
-      } catch (e) {
-        if (e.name === 'AbortError') return false; // user cancelled
-        console.warn('showSaveFilePicker failed, trying fallback:', e);
-      }
-    }
 
-    // Method 2: Fallback — URL.createObjectURL (more reliable than FileReader)
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 2000);
-      return true;
-    } catch (e) {
-      console.error('Download failed:', e);
-      return false;
-    }
-  }
-
-  // ── Export ──
+  // ── Export helpers ──
   async function handleExportJSON() {
     try {
       const data = await exportData();
@@ -115,96 +75,33 @@ export default function Settings({ onRefresh, theme, setTheme, mode, toggleMode,
       if (ok) toast('JSON exported ✓', 'success');
     } catch (err) {
       console.error('Export JSON failed:', err);
-      toast('Export failed — see console for details', 'error');
+      toast('Export failed', 'error');
     }
   }
 
   async function handleExportCSV() {
     try {
       const { transactions, categories } = await exportData();
-      const catMap = Object.fromEntries((categories || []).map(c => [c.id, c.name]));
-      const rows = [
-        ['Date', 'Type', 'Category', 'Amount', 'Notes', 'Added By', 'Recurring'],
-        ...transactions.map(t => [
-          t.date,
-          t.type,
-          catMap[t.categoryId] || t.categoryId,
-          t.amount,
-          t.notes ?? '',
-          t.addedBy ?? '',
-          t.isRecurring ? 'Yes' : 'No',
-        ]),
-      ];
-      const csv = rows.map(r =>
-        r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-      ).join('\r\n');
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel compat
+      const csv = formatCSV(transactions, categories);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const ok = await downloadFile(blob, `cashflow-${today()}.csv`);
       if (ok) toast('CSV exported ✓', 'success');
     } catch (err) {
       console.error('Export CSV failed:', err);
-      toast('Export failed — see console for details', 'error');
+      toast('Export failed', 'error');
     }
   }
 
   async function handleExportExcel() {
     try {
       const { transactions, categories } = await exportData();
-      const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
-
-      // Transactions sheet
-      const txRows = transactions.map(t => {
-        const cat = catMap[t.categoryId];
-        return {
-          Date: t.date,
-          Type: t.type?.charAt(0).toUpperCase() + t.type?.slice(1),
-          Category: cat?.name || 'Unknown',
-          Amount: t.amount,
-          Notes: t.notes || '',
-          'Added By': t.addedBy || '',
-          Recurring: t.isRecurring ? 'Yes' : 'No',
-          'Created At': t.createdAt || '',
-        };
-      });
-
-      // Categories sheet
-      const catRows = categories.map(c => ({
-        Name: c.name,
-        Emoji: c.emoji,
-        Type: c.type?.charAt(0).toUpperCase() + c.type?.slice(1),
-        Color: c.color,
-        'Budget Limit': c.budgetLimit || '',
-        'Is Bank': c.isBank ? 'Yes' : 'No',
-        'Bank Name': c.bankName || '',
-        'APR (%)': c.apr || '',
-        'Daily Interest': c.isDailyInterest ? 'Yes' : 'No',
-      }));
-
-      // Summary sheet
-      const totals = transactions.reduce((acc, t) => {
-        if (t.type === 'income') acc.income += t.amount;
-        if (t.type === 'expense') acc.expenses += t.amount;
-        if (t.type === 'savings') acc.savings += t.amount;
-        return acc;
-      }, { income: 0, expenses: 0, savings: 0 });
-
-      const summaryRows = [
-        { Metric: 'Total Income', Value: totals.income },
-        { Metric: 'Total Expenses', Value: totals.expenses },
-        { Metric: 'Total Savings', Value: totals.savings },
-        { Metric: 'Money on Hand', Value: totals.income - totals.expenses - totals.savings },
-        { Metric: 'Net Worth', Value: totals.income - totals.expenses },
-        { Metric: 'Total Transactions', Value: transactions.length },
-        { Metric: 'Total Categories', Value: categories.length },
-        { Metric: 'Export Date', Value: new Date().toLocaleDateString() },
-      ];
+      const { txRows, catRows, summaryRows } = mapExcelData(transactions, categories);
 
       const wb = XLSX.utils.book_new();
       const wsTx = XLSX.utils.json_to_sheet(txRows);
       const wsCat = XLSX.utils.json_to_sheet(catRows);
       const wsSum = XLSX.utils.json_to_sheet(summaryRows);
 
-      // Set column widths
       wsTx['!cols'] = [{ wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 14 }, { wch: 30 }, { wch: 14 }, { wch: 10 }, { wch: 20 }];
       wsCat['!cols'] = [{ wch: 20 }, { wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 10 }, { wch: 14 }];
       wsSum['!cols'] = [{ wch: 20 }, { wch: 18 }];
@@ -219,26 +116,17 @@ export default function Settings({ onRefresh, theme, setTheme, mode, toggleMode,
       if (ok) toast('Excel exported ✓', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
-      toast('Export failed — see console for details', 'error');
+      toast('Export failed', 'error');
     }
   }
 
   function validateImportData(data) {
     if (!data || typeof data !== 'object') return false;
     if (!Array.isArray(data.transactions) || !Array.isArray(data.categories)) return false;
-
-    // Basic structure check for transactions
-    const hasInvalidTx = data.transactions.some(t =>
-      typeof t.amount !== 'number' || !t.date || !t.type || !t.categoryId
-    );
+    const hasInvalidTx = data.transactions.some(t => typeof t.amount !== 'number' || !t.date || !t.type || !t.categoryId);
     if (hasInvalidTx) return false;
-
-    // Basic structure check for categories
-    const hasInvalidCat = data.categories.some(c =>
-      !c.id || !c.name || !c.type
-    );
+    const hasInvalidCat = data.categories.some(c => !c.id || !c.name || !c.type);
     if (hasInvalidCat) return false;
-
     return true;
   }
 
@@ -294,62 +182,19 @@ export default function Settings({ onRefresh, theme, setTheme, mode, toggleMode,
       </div>
 
       {/* Profile */}
-      <div className="settings-section">
-        <h3>👤 Your Profile</h3>
-        <p>Your name is tagged on every transaction you add — useful for shared households.</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="form-group">
-            <label className="form-label">Name</label>
-            <input className="form-input" placeholder="Your name" value={editName} onChange={e => setEditName(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Avatar</label>
-            <div className="avatar-grid">
-              {AVATARS.map(av => (
-                <button key={av} type="button" className={`avatar-btn ${editAvatar === av ? 'selected' : ''}`} onClick={() => setEditAvatar(av)}>{av}</button>
-              ))}
-            </div>
-          </div>
-          <button className="btn btn-primary" style={{ width: 'fit-content' }} onClick={handleSaveProfile} disabled={!editName.trim()}>
-            Save Profile
-          </button>
-        </div>
-      </div>
+      <ProfileSection
+        editName={editName} setEditName={setEditName}
+        editAvatar={editAvatar} setEditAvatar={setEditAvatar}
+        avatars={AVATARS}
+        onSave={handleSaveProfile}
+      />
 
-      {/* Theme */}
-      <div className="settings-section">
-        <h3>🎨 Appearance</h3>
-
-        {/* Design style picker */}
-        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Design Style</p>
-        <div className="style-picker">
-          {STYLES.map(s => (
-            <div key={s.id} className={`style-option ${style === s.id ? 'active' : ''}`} onClick={() => setStyle(s.id)}>
-              <div style={{ fontSize: '1.5rem' }}>{s.emoji}</div>
-              <div className="style-option-name">{s.name}</div>
-              <div className="style-option-desc">{s.desc}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Color theme picker */}
-        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>Color Theme</p>
-        <div className="theme-swatches">
-          {THEMES.map(t => (
-            <button key={t.id} className={`theme-swatch ${theme === t.id ? 'active' : ''}`}
-              style={{ background: `${t.bg}22`, border: `2px solid ${theme === t.id ? t.bg : 'transparent'}` }}
-              onClick={() => setTheme(t.id)}
-              title={t.label}
-            >
-              {t.emoji} <span style={{ fontSize: 12, fontWeight: 700, color: t.bg }}>{t.label}</span>
-            </button>
-          ))}
-        </div>
-        <button className="mode-toggle" onClick={toggleMode}>
-          {mode === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          Switch to {mode === 'dark' ? 'Light' : 'Dark'} Mode
-        </button>
-      </div>
+      {/* Appearance */}
+      <AppearanceSection
+        style={style} setStyle={setStyle} styles={STYLES}
+        theme={theme} setTheme={setTheme} themes={THEMES}
+        mode={mode} toggleMode={toggleMode}
+      />
 
       {/* Currency & Layout */}
       <div className="settings-section">
@@ -387,75 +232,23 @@ export default function Settings({ onRefresh, theme, setTheme, mode, toggleMode,
         </div>
       </div>
 
-      {/* Export */}
-      <div className="settings-section">
-        <h3>📤 Export Data</h3>
-        <p>Download a backup of all your transactions and categories.</p>
-        <div className="settings-actions">
-          <button className="btn btn-primary" onClick={handleExportJSON}><Download size={15} /> JSON Backup</button>
-          <button className="btn btn-ghost" onClick={handleExportCSV}><Download size={15} /> CSV</button>
-          <button className="btn btn-ghost" onClick={handleExportExcel}><FileSpreadsheet size={15} /> Excel (.xlsx)</button>
-        </div>
-      </div>
+      {/* Export & Share */}
+      <DataExportSection
+        onExportJSON={handleExportJSON}
+        onExportCSV={handleExportCSV}
+        onExportExcel={handleExportExcel}
+        onShowQR={() => setShowQR(true)}
+      />
 
-      {/* Cross-browser share */}
-      <div className="settings-section">
-        <h3>📱 Share to Another Browser</h3>
-        <p>Generate a QR code or share link to transfer your data to another device — no account needed.</p>
-        <div className="settings-actions">
-          <button className="btn btn-ghost" onClick={() => setShowQR(true)}>📲 Generate QR / Share Link</button>
-        </div>
-      </div>
-
-      {/* Import */}
-      <div className="settings-section">
-        <h3>📥 Import Data</h3>
-        <p>Restore from a previously exported JSON backup. This will <strong>replace</strong> all current data.</p>
-        <div className="settings-actions">
-          <button className="btn btn-ghost" onClick={() => fileRef.current.click()}><Upload size={15} /> Import JSON Backup</button>
-          <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
-        </div>
-      </div>
-
-      {/* Danger zone */}
-      <div className="settings-section" style={{ border: '1px solid rgba(244,63,94,0.2)' }}>
-        <h3 style={{ color: 'var(--expense)' }}>⚠ Danger Zone</h3>
-        <p>Permanently delete all your CashFlow data. This cannot be undone.</p>
-        <div className="settings-actions">
-          <button className="btn btn-danger" onClick={() => setShowClearConfirm(true)}><Trash2 size={15} /> Clear All Data</button>
-        </div>
-      </div>
+      {/* Import & Danger Zone */}
+      <DataImportSection
+        onImportClick={() => fileRef.current.click()}
+        onClearClick={() => setShowClearConfirm(true)}
+      />
+      <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
 
       {/* About */}
-      <div className="settings-section">
-        <h3>ℹ️ About CashFlow</h3>
-        <p style={{ fontSize: 13 }}>Version 1 · Personal budget tracker. No bank sync. No subscriptions. Your money, your privacy.</p>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, marginBottom: 16 }}>Press <kbd style={{ background: 'var(--bg-elevated)', padding: '1px 6px', borderRadius: 4, fontSize: 11, border: '1px solid var(--border)' }}>N</kbd> anywhere to quickly add a transaction.</p>
-
-        <div style={{ padding: 16, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', fontSize: 12, lineHeight: 1.6 }}>
-          <strong style={{ color: 'var(--text-primary)' }}>Credits:</strong><br />
-          <a href="https://github.com/czeusdc/CashFlow" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>CashFlow</a><br />
-          <a href="https://react.dev" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>React</a> · UI Library<br />
-          <a href="https://vitejs.dev" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Vite</a> · Build Tool<br />
-          <a href="https://reactrouter.com" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>React Router</a> · Client-side Routing<br />
-          <a href="https://github.com/jakearchibald/idb" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>idb</a> · Typed IndexedDB Storage<br />
-          <a href="https://www.chartjs.org" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Chart.js</a> + <a href="https://react-chartjs-2.js.org" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>react-chartjs-2</a> · Data Visualisation<br />
-          <a href="https://lucide.dev" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Lucide React</a> · Icons<br />
-          <a href="https://day.js.org" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Day.js</a> · Date Handling<br />
-          <a href="https://sheetjs.com" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>SheetJS</a> · Excel Export<br />
-          <a href="https://github.com/missive/emoji-mart" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Emoji Mart</a> · Emoji Picker<br />
-          <a href="https://github.com/zpao/qrcode.react" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>QR Code React</a> · QR Generation
-        </div>
-
-        <div style={{ padding: 16, marginTop: 16, background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-          <p style={{ fontSize: 13, marginBottom: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            If CashFlow has helped you take control of your finances, consider supporting its development! Your donation helps keep this project alive and ad-free.
-          </p>
-          <a href='https://ko-fi.com/K3K71ZAC47' target='_blank' rel="noreferrer">
-            <img height='36' style={{ border: 0, height: 36 }} src='https://storage.ko-fi.com/cdn/kofi2.png?v=6' alt='Buy Me a Coffee at ko-fi.com' />
-          </a>
-        </div>
-      </div>
+      <AboutSection />
 
       {showQR && <QRExport onClose={() => setShowQR(false)} onImported={onRefresh} />}
 
@@ -534,4 +327,3 @@ function ClearConfirmModal({ onConfirm, onClose }) {
   );
 }
 
-function today() { return new Date().toISOString().slice(0, 10); }

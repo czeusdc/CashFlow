@@ -95,14 +95,22 @@ export default function Dashboard({ transactions, categories, totals, onAdd, onU
       byCategory[t.categoryId] = (byCategory[t.categoryId] || 0) + t.amount;
     });
     const total = Object.values(byCategory).reduce((s, v) => s + v, 0);
-    return Object.entries(byCategory)
+    const top3Entries = Object.entries(byCategory)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([catId, amount]) => ({
-        cat: categories.find(c => c.id === Number(catId)),
-        amount,
-        pct: total > 0 ? Math.round((amount / total) * 100) : 0,
-      }));
+      .slice(0, 3);
+
+    if (top3Entries.length === 0) return [];
+
+    const categoryMap = {};
+    for (let i = 0; i < categories.length; i++) {
+      categoryMap[categories[i].id] = categories[i];
+    }
+
+    return top3Entries.map(([catId, amount]) => ({
+      cat: categoryMap[catId],
+      amount,
+      pct: total > 0 ? Math.round((amount / total) * 100) : 0,
+    }));
   }, [thisMonth, categories]);
 
   // Savings interest projections

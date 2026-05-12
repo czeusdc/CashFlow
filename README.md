@@ -8,6 +8,8 @@
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)
 
+### 🔗 [Try the Live Demo](https://czeusdc.github.io/CashFlow/)
+
 ---
 
 ## ✨ Features
@@ -75,6 +77,9 @@ npm run build
 ```
 
 Output goes to `/dist`. Deploy anywhere that supports static hosting — [GitHub Pages](https://pages.github.com/), [Vercel](https://vercel.com/), [Netlify](https://netlify.com/), etc.
+
+This project is automatically deployed to **GitHub Pages** on every push to `main`.
+Check it out here: **[czeusdc.github.io/CashFlow](https://czeusdc.github.io/CashFlow/)**
 
 ### Lint
 

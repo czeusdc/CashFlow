@@ -62,7 +62,7 @@ git clone https://github.com/czeusdc/cashflow.git
 cd cashflow
 
 # 2. Install dependencies
-npm install
+npm install --legacy-peer-deps
 
 # 3. Start the dev server
 npm run dev

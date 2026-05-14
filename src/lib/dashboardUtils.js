@@ -78,6 +78,10 @@ export function computeInterest(principal, apr, isDailyInterest, firstDate) {
  */
 export function filterByPeriod(transactions, period) {
   if (period === 'allTime') return transactions;
+  if (period === 'thisMonth') {
+    const monthStart = dayjs().startOf('month');
+    return transactions.filter(t => dayjs(t.date).isAfter(monthStart.subtract(1, 'day')));
+  }
   if (period === 'thisQuarter') {
     const currentMonth = dayjs().month();
     const quarterStartMonth = Math.floor(currentMonth / 3) * 3;

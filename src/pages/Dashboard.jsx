@@ -42,6 +42,7 @@ import TopSpending from '../components/Dashboard/TopSpending';
 const RANGES = ['6M', 'Yearly', 'All Time'];
 
 const PERIODS = [
+  { id: 'thisMonth',   label: 'This Month' },
   { id: 'thisQuarter', label: 'This Quarter' },
   { id: 'ytd',         label: 'Year to Date' },
   { id: 'allTime',     label: 'All Time' },
@@ -51,7 +52,7 @@ const PERIODS = [
 export default function Dashboard({ transactions, categories, totals, onAdd, onUpdate, themeStyle, themeColor }) {
   const [showForm, setShowForm] = useState(false);
   const [range, setRange] = useState(() => localStorage.getItem(STORAGE_KEYS.CHART_RANGE) || '6M');
-  const [summaryPeriod, setSummaryPeriod] = useState(() => localStorage.getItem(STORAGE_KEYS.SUMMARY_PERIOD) || 'thisQuarter');
+  const [summaryPeriod, setSummaryPeriod] = useState(() => localStorage.getItem(STORAGE_KEYS.SUMMARY_PERIOD) || 'thisMonth');
   const hideNetWorth = localStorage.getItem(STORAGE_KEYS.HIDE_NETWORTH) === 'true';
   const hideInterest = localStorage.getItem(STORAGE_KEYS.HIDE_INTEREST) === 'true';
   const { fmt, profile } = useApp();

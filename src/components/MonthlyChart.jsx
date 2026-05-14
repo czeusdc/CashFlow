@@ -120,7 +120,15 @@ export default function MonthlyChart({ transactions, range = '6M', themeStyle = 
     },
     plugins: {
       legend: {
-        labels: { color: textColor, font: { family: 'inherit', size: 12 }, usePointStyle: true, pointStyleWidth: 8 },
+        labels: { 
+          color: textColor, 
+          font: { family: 'inherit', size: 12 }, 
+          usePointStyle: true, 
+          pointStyle: 'circle',
+          boxWidth: 8,
+          boxHeight: 8,
+          padding: 15
+        },
       },
       tooltip: {
         backgroundColor: tooltipBg,

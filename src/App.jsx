@@ -4,15 +4,14 @@
  * Responsibilities:
  *  - Bootstraps all data hooks (transactions, categories, theme, currency, profile)
  *  - Builds the AppContext value shared with every page
- *  - Renders the router, sidebar, and global overlays (profile setup, quick-add)
- *  - Registers the "N" keyboard shortcut to open a quick-add transaction modal
+ *  - Renders the router, sidebar, and global overlays
  */
 
 import { useEffect, useState } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar            from './components/Navbar';
 import { ToastProvider } from './components/Toast';
-import ProfileSetupModal from './components/ProfileSetupModal';
+import OnboardingWizard from './components/OnboardingWizard';
 import { useTransactions } from './hooks/useTransactions';
 import { useCategories }   from './hooks/useCategories';
 import { useTheme }        from './hooks/useTheme';
@@ -34,19 +33,9 @@ export default function App() {
   const { profile, setProfile, isSetup } = useProfile();
 
   // ── Modal state ───────────────────────────────────────────────────────────
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showQuickAdd,     setShowQuickAdd]     = useState(false);
-
-  // Show the profile setup modal on first launch (delayed to avoid flash).
-  useEffect(() => {
-    if (!isSetup) {
-      const timer = setTimeout(() => setShowProfileModal(true), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [isSetup]);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
 
   // Global keyboard shortcut: press "N" to open a quick-add transaction modal.
-  // Skipped when focus is inside any text input so typing is not intercepted.
   useEffect(() => {
     function handleKey(e) {
       if (e.key === 'n' || e.key === 'N') {
@@ -56,7 +45,6 @@ export default function App() {
       }
       if (e.key === 'Escape') {
         setShowQuickAdd(false);
-        setShowProfileModal(false);
       }
     }
     window.addEventListener('keydown', handleKey);
@@ -80,15 +68,19 @@ export default function App() {
   }
 
   // ── Context value ─────────────────────────────────────────────────────────
-  // Single source of truth for currency formatting and user profile.
-  // Pages read this via useApp() instead of receiving props.
   const appCtx = {
     fmt:         currCtx.fmt,
     currency:    currCtx.currency,
     setCurrency: currCtx.setCurrency,
     profile,
     setProfile,
+    theme:       themeCtx.theme,
+    setTheme:    themeCtx.setTheme,
     mode:        themeCtx.mode,
+    setMode:     themeCtx.setMode,
+    toggleMode:  themeCtx.toggleMode,
+    style:       themeCtx.style,
+    setStyle:    themeCtx.setStyle,
     isSetup,
   };
 
@@ -97,44 +89,43 @@ export default function App() {
       <HashRouter>
         <ToastProvider>
           <div className="app-layout">
-            <Navbar />
+            <WelcomeGate isSetup={isSetup}>
+              <Navbar />
 
-            <Routes>
-              <Route path="/" element={
-                <Dashboard
-                  transactions={tx.transactions} categories={cat.categories}
-                  totals={tx.totals} onAdd={tx.add} onUpdate={tx.update} onDelete={tx.remove}
-                  themeStyle={themeCtx.style}
-                  themeColor={themeCtx.theme}
-                />
-              } />
-              <Route path="/transactions" element={
-                <Transactions
-                  transactions={tx.transactions} categories={cat.categories}
-                  onAdd={tx.add} onUpdate={tx.update} onDelete={tx.remove}
-                />
-              } />
-              <Route path="/categories" element={
-                <Categories
-                  categories={cat.categories} transactions={tx.transactions}
-                  onAdd={cat.add} onUpdate={cat.update} onDelete={cat.remove}
-                />
-              } />
-              <Route path="/settings" element={
-                <Settings
-                  onRefresh={refresh}
-                  theme={themeCtx.theme} mode={themeCtx.mode} style={themeCtx.style}
-                  setTheme={themeCtx.setTheme} toggleMode={themeCtx.toggleMode} setStyle={themeCtx.setStyle}
-                  currency={currCtx.currency} setCurrency={currCtx.setCurrency}
-                />
-              } />
-            </Routes>
+              <Routes>
+                <Route path="/welcome" element={<OnboardingWizard />} />
+                <Route path="/" element={
+                  <Dashboard
+                    transactions={tx.transactions} categories={cat.categories}
+                    totals={tx.totals} onAdd={tx.add} onUpdate={tx.update} onDelete={tx.remove}
+                    themeStyle={themeCtx.style}
+                    themeColor={themeCtx.theme}
+                  />
+                } />
+                <Route path="/transactions" element={
+                  <Transactions
+                    transactions={tx.transactions} categories={cat.categories}
+                    onAdd={tx.add} onUpdate={tx.update} onDelete={tx.remove}
+                  />
+                } />
+                <Route path="/categories" element={
+                  <Categories
+                    categories={cat.categories} transactions={tx.transactions}
+                    onAdd={cat.add} onUpdate={cat.update} onDelete={cat.remove}
+                  />
+                } />
+                <Route path="/settings" element={
+                  <Settings
+                    onRefresh={refresh}
+                    theme={themeCtx.theme} mode={themeCtx.mode} style={themeCtx.style}
+                    setTheme={themeCtx.setTheme} toggleMode={themeCtx.toggleMode} setStyle={themeCtx.setStyle}
+                    currency={currCtx.currency} setCurrency={currCtx.setCurrency}
+                  />
+                } />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </WelcomeGate>
           </div>
-
-          {/* First-run profile setup modal */}
-          {showProfileModal && (
-            <ProfileSetupModal onClose={() => setShowProfileModal(false)} />
-          )}
 
           {/* Quick-add modal triggered by the "N" keyboard shortcut */}
           {showQuickAdd && (
@@ -148,4 +139,24 @@ export default function App() {
       </HashRouter>
     </AppContext.Provider>
   );
+}
+
+/**
+ * WelcomeGate
+ * 
+ * Ensures new users are redirected to the welcome page and existing users
+ * are kept away from it once setup is complete.
+ */
+function WelcomeGate({ isSetup, children }) {
+  const location = useLocation();
+
+  if (!isSetup && location.pathname !== '/welcome') {
+    return <Navigate to="/welcome" replace />;
+  }
+
+  if (isSetup && location.pathname === '/welcome') {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
 }

@@ -12,7 +12,13 @@
  *   setCurrency   - updates the active currency
  *   profile       - { name, avatar } — current user profile
  *   setProfile    - merges updates into the profile
+ *   theme         - active accent color
+ *   setTheme      - updates the accent color
  *   mode          - "dark" | "light"
+ *   setMode       - updates the UI mode
+ *   toggleMode    - toggles between dark and light
+ *   style         - active UI style
+ *   setStyle      - updates the UI style
  *   isSetup       - true once the user has saved their name
  */
 
@@ -25,7 +31,13 @@ export const AppContext = createContext({
   setCurrency: () => {},
   profile:     { name: '', avatar: '👤' },
   setProfile:  () => {},
+  theme:       'teal',
+  setTheme:    () => {},
   mode:        'dark',
+  setMode:     () => {},
+  toggleMode:  () => {},
+  style:       'glass',
+  setStyle:    () => {},
   isSetup:     false,
 });
 

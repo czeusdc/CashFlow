@@ -157,6 +157,21 @@ export async function deleteCategory(id) {
   await db.delete('categories', id);
 }
 
+/**
+ * deleteCategories(ids)
+ * 
+ * Deletes multiple categories in a single atomic transaction.
+ * This ensures that either all are deleted or none are, preventing corrupted states.
+ */
+export async function deleteCategories(ids) {
+  const db = await getDB();
+  const tx = db.transaction('categories', 'readwrite');
+  await Promise.all([
+    ...ids.map(id => tx.store.delete(id)),
+    tx.done
+  ]);
+}
+
 // ─── Backup / Restore ─────────────────────────────────────────────────────────
 
 /**

@@ -29,6 +29,8 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  if (location.pathname === '/welcome') return null;
+
   return (
     <>
       {/* ─── Sidebar (desktop) ──────────────────────────────────────────── */}

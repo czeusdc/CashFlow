@@ -119,6 +119,13 @@ export default function OnboardingWizard() {
     }
   }, [selectedCurrency, name, avatar, categories, toggles, customCats, setCurrency, setProfile, toast]);
 
+  // ── Skip Setup ────────────────────────────────────────────────────────────
+  const handleSkip = useCallback(() => {
+    setCurrency(selectedCurrency);
+    setProfile({ name: 'User', avatar: '👤' });
+    toast("Welcome! You can finish setting up in Settings anytime.", "info");
+  }, [selectedCurrency, setCurrency, setProfile, toast]);
+
   // ── Custom Category Logic ─────────────────────────────────────────────────
   const addCustom = () => {
     const trimmed = customName.trim();
@@ -166,7 +173,9 @@ export default function OnboardingWizard() {
           </div>
 
           <div className="onboard-footer">
-            <div />
+            <button className="btn btn-ghost" onClick={handleSkip}>
+              Skip setup for now
+            </button>
             <button className="btn btn-primary btn-lg" onClick={next}>
               Let's Go <ChevronRight size={18} />
             </button>
@@ -378,16 +387,19 @@ export default function OnboardingWizard() {
           
           {/* Live App Preview - Only shown in Step 2, or generic branding elsewhere */}
           <div className="app-preview-container">
-            <div className="preview-card">
+            <div className="preview-card" data-theme={theme} data-mode={mode} data-style={style}>
               <div className="preview-header">
                 <div className="dot red" /> <div className="dot yellow" /> <div className="dot green" />
-                <div className="preview-title">Dashboard Preview</div>
+                <div className="preview-title">Live Preview</div>
               </div>
               <div className="preview-body">
                 <div className="preview-stats">
                   <div className="p-stat">
                     <span className="p-label">Total Balance</span>
-                    <span className="p-value">$12,450.00</span>
+                    <span className="p-value">
+                      {CURRENCIES.find(c => c.code === selectedCurrency)?.symbol || '$'} 
+                      12,450.00
+                    </span>
                   </div>
                   <div className="p-chart" />
                 </div>
@@ -432,6 +444,8 @@ export default function OnboardingWizard() {
         </div>
 
         <div className="welcome-footer-links">
+          <button className="btn-link-muted" onClick={handleSkip}>Skip setup</button>
+          <span>&bull;</span>
           <span>Version 1.2.0</span>
           <span>&bull;</span>
           <a href="https://github.com/czeusdc/CashFlow" target="_blank" rel="noreferrer">Open Source</a>

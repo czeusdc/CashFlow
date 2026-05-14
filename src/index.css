@@ -1662,3 +1662,16 @@ input:checked + .slider:before {
   50% { transform: scale(1.1); }
   100% { transform: scale(1); }
 }
+.btn-link-muted {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: var(--transition);
+}
+.btn-link-muted:hover {
+  color: var(--text-primary);
+}
